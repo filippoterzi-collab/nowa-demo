@@ -2,8 +2,11 @@
 
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CheckCircle2 } from "lucide-react";
 import { getUSDCBalance } from "@/lib/usdc-balance";
+import { MOCK_USER, PLATFORMS, type PlatformId } from "@/lib/mock-data";
+import { PlatformPicker } from "@/components/platform-picker";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,9 +18,12 @@ import {
 } from "@/components/ui/dialog";
 
 type CashOutStatus = "idle" | "loading" | "success" | "error";
+type PlatformStatus = "not_selected" | "connecting" | "connected";
 
 const CASH_OUT_AMOUNT = 5;
 const BALANCE_REFETCH_DELAY_MS = 1500;
+const OAUTH_CONNECTING_MS = 2000;
+const OAUTH_SUCCESS_MS = 1500;
 
 function matchSolanaError(message: string): string | null {
   const lc = message.toLowerCase();
@@ -85,15 +91,41 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [platformStatus, setPlatformStatus] =
+    useState<PlatformStatus>("not_selected");
+  const [selectedPlatform, setSelectedPlatform] = useState<PlatformId | null>(
+    null
+  );
+  const [showConnectedSuccess, setShowConnectedSuccess] = useState(false);
+
+  const oauthTimers = useRef<{ connecting?: number; success?: number }>({});
+
+  const clearOauthTimers = useCallback(() => {
+    if (oauthTimers.current.connecting !== undefined) {
+      window.clearTimeout(oauthTimers.current.connecting);
+      oauthTimers.current.connecting = undefined;
+    }
+    if (oauthTimers.current.success !== undefined) {
+      window.clearTimeout(oauthTimers.current.success);
+      oauthTimers.current.success = undefined;
+    }
+  }, []);
 
   useEffect(() => {
     setMounted(true);
-  }, []);
+    return () => {
+      clearOauthTimers();
+    };
+  }, [clearOauthTimers]);
 
   useEffect(() => {
     if (!publicKey) {
       setErrorMessage(null);
       setUsdcBalance(null);
+      clearOauthTimers();
+      setPlatformStatus("not_selected");
+      setSelectedPlatform(null);
+      setShowConnectedSuccess(false);
       return;
     }
     let cancelled = false;
@@ -108,7 +140,7 @@ export default function Home() {
     return () => {
       cancelled = true;
     };
-  }, [publicKey, connection]);
+  }, [publicKey, connection, clearOauthTimers]);
 
   const handleCashOut = useCallback(async () => {
     if (!publicKey) return;
@@ -130,7 +162,6 @@ export default function Home() {
     try {
       signatureBytes = await signMessage(messageBytes);
     } catch {
-      // User declined or wallet error — treated as cancellation per spec, not failure.
       setErrorMessage("You declined to sign. Cash-out cancelled.");
       setCashOutStatus("idle");
       return;
@@ -211,10 +242,45 @@ export default function Home() {
     handleCashOut();
   }, [handleCashOut]);
 
+  const handlePlatformSelect = useCallback(
+    (id: PlatformId) => {
+      clearOauthTimers();
+      setSelectedPlatform(id);
+      setPlatformStatus("connecting");
+      setShowConnectedSuccess(false);
+
+      oauthTimers.current.connecting = window.setTimeout(() => {
+        // Wallet may have disconnected during the 2s — bail in that case.
+        if (!publicKey) return;
+        setPlatformStatus("connected");
+        setShowConnectedSuccess(true);
+
+        oauthTimers.current.success = window.setTimeout(() => {
+          setShowConnectedSuccess(false);
+        }, OAUTH_SUCCESS_MS);
+      }, OAUTH_CONNECTING_MS);
+    },
+    [publicKey, clearOauthTimers]
+  );
+
+  const handleSwitchPlatform = useCallback(() => {
+    clearOauthTimers();
+    setPlatformStatus("not_selected");
+    setSelectedPlatform(null);
+    setShowConnectedSuccess(false);
+    handleReset();
+  }, [clearOauthTimers, handleReset]);
+
   const address = publicKey?.toBase58();
   const truncated = address
     ? `${address.slice(0, 4)}…${address.slice(-4)}`
     : null;
+  const selectedPlatformObj = selectedPlatform
+    ? PLATFORMS.find((p) => p.id === selectedPlatform) ?? null
+    : null;
+  const oauthModalOpen =
+    platformStatus === "connecting" ||
+    (platformStatus === "connected" && showConnectedSuccess);
 
   return (
     <main className="flex flex-1 flex-col items-center justify-center px-6 py-12">
@@ -236,11 +302,18 @@ export default function Home() {
         ) : (
           <>
             <div className="w-full flex flex-col items-center gap-2">
-              <div
-                className="font-mono text-xs text-neutral-600 px-3 py-1.5 rounded-full border border-neutral-200 bg-neutral-50"
-                title={address}
-              >
-                {truncated}
+              <div className="flex items-center gap-2">
+                <div
+                  className="font-mono text-xs text-neutral-600 px-3 py-1.5 rounded-full border border-neutral-200 bg-neutral-50"
+                  title={address}
+                >
+                  {truncated}
+                </div>
+                {platformStatus === "connected" && selectedPlatformObj && (
+                  <div className="text-xs text-neutral-700 px-3 py-1.5 rounded-full border border-neutral-200 bg-neutral-50">
+                    {selectedPlatformObj.name}
+                  </div>
+                )}
               </div>
               <div className="text-sm text-neutral-500">
                 Balance:{" "}
@@ -252,85 +325,99 @@ export default function Home() {
                   </span>
                 )}
               </div>
-              <button
-                onClick={() => disconnect()}
-                className="text-xs text-neutral-500 hover:text-neutral-700 underline underline-offset-2"
-              >
-                Disconnect
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => disconnect()}
+                  className="text-xs text-neutral-500 hover:text-neutral-700 underline underline-offset-2"
+                >
+                  Disconnect
+                </button>
+                {platformStatus === "connected" && (
+                  <button
+                    onClick={handleSwitchPlatform}
+                    className="text-xs text-neutral-500 hover:text-neutral-700 underline underline-offset-2"
+                  >
+                    Switch platform
+                  </button>
+                )}
+              </div>
             </div>
 
-            <div className="w-full rounded-2xl border border-neutral-200 p-5 flex flex-col gap-4">
-              {cashOutStatus === "success" ? (
-                <>
-                  <div className="text-base font-semibold text-neutral-900">
-                    ✓ ${CASH_OUT_AMOUNT} USDC received
-                  </div>
-                  {lastSolscanUrl && (
-                    <a
-                      href={lastSolscanUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm text-neutral-700 underline underline-offset-2 hover:text-neutral-900"
-                    >
-                      View on Solscan
-                    </a>
-                  )}
-                  {lastSignature && (
-                    <div
-                      className="font-mono text-xs text-neutral-400 truncate"
-                      title={lastSignature}
-                    >
-                      {lastSignature.slice(0, 8)}…{lastSignature.slice(-8)}
-                    </div>
-                  )}
-                  <button
-                    onClick={handleReset}
-                    className="w-full h-11 rounded-lg border border-neutral-200 text-sm font-medium text-neutral-900 hover:bg-neutral-50 transition-colors"
-                  >
-                    Try again
-                  </button>
-                </>
-              ) : (
-                <>
-                  <div className="flex flex-col gap-1">
+            {platformStatus === "connected" ? (
+              <div className="w-full rounded-2xl border border-neutral-200 p-5 flex flex-col gap-4">
+                {cashOutStatus === "success" ? (
+                  <>
                     <div className="text-base font-semibold text-neutral-900">
-                      Upwork
+                      ✓ ${CASH_OUT_AMOUNT} USDC received
                     </div>
-                    <div className="text-sm text-neutral-500">
-                      ${CASH_OUT_AMOUNT.toFixed(2)} pending
-                    </div>
-                  </div>
-                  <Button
-                    variant="default"
-                    size="lg"
-                    className="w-full"
-                    disabled={cashOutStatus === "loading"}
-                    onClick={() => setShowConfirmDialog(true)}
-                  >
-                    {cashOutStatus === "loading" ? (
-                      <>
-                        <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        Sending…
-                      </>
-                    ) : (
-                      `Cash out $${CASH_OUT_AMOUNT}`
+                    {lastSolscanUrl && (
+                      <a
+                        href={lastSolscanUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm text-neutral-700 underline underline-offset-2 hover:text-neutral-900"
+                      >
+                        View on Solscan
+                      </a>
                     )}
-                  </Button>
-                  {errorMessage && (
-                    <div
-                      className={`text-sm ${
-                        cashOutStatus === "error"
-                          ? "text-red-600"
-                          : "text-neutral-600"
-                      }`}
+                    {lastSignature && (
+                      <div
+                        className="font-mono text-xs text-neutral-400 truncate"
+                        title={lastSignature}
+                      >
+                        {lastSignature.slice(0, 8)}…{lastSignature.slice(-8)}
+                      </div>
+                    )}
+                    <button
+                      onClick={handleReset}
+                      className="w-full h-11 rounded-lg border border-neutral-200 text-sm font-medium text-neutral-900 hover:bg-neutral-50 transition-colors"
                     >
-                      {errorMessage}
+                      Try again
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex flex-col gap-1">
+                      <div className="text-base font-semibold text-neutral-900">
+                        {selectedPlatformObj?.name ?? "Upwork"}
+                      </div>
+                      <div className="text-sm text-neutral-500">
+                        ${CASH_OUT_AMOUNT.toFixed(2)} pending
+                      </div>
                     </div>
-                  )}
-                </>
-              )}
-            </div>
+                    <Button
+                      variant="default"
+                      size="lg"
+                      className="w-full"
+                      disabled={cashOutStatus === "loading"}
+                      onClick={() => setShowConfirmDialog(true)}
+                    >
+                      {cashOutStatus === "loading" ? (
+                        <>
+                          <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          Sending…
+                        </>
+                      ) : (
+                        `Cash out $${CASH_OUT_AMOUNT}`
+                      )}
+                    </Button>
+                    {errorMessage && (
+                      <div
+                        className={`text-sm ${
+                          cashOutStatus === "error"
+                            ? "text-red-600"
+                            : "text-neutral-600"
+                        }`}
+                      >
+                        {errorMessage}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            ) : (
+              <PlatformPicker onSelect={handlePlatformSelect} />
+            )}
           </>
         )}
       </div>
@@ -364,6 +451,41 @@ export default function Home() {
               Confirm
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={oauthModalOpen}
+        onOpenChange={() => {
+          // Controlled, non-dismissible: ignore user-initiated close attempts
+          // (Esc, backdrop click). Modal closes only when state flips oauthModalOpen → false.
+        }}
+      >
+        <DialogContent className="sm:max-w-sm" showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>
+              {platformStatus === "connecting"
+                ? `Connecting to ${selectedPlatformObj?.name ?? "..."}…`
+                : "Successfully connected"}
+            </DialogTitle>
+            <DialogDescription>
+              {platformStatus === "connecting"
+                ? "One moment please."
+                : `Linked to ${selectedPlatformObj?.name ?? "..."}.`}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-6 flex flex-col items-center gap-3">
+            {platformStatus === "connecting" ? (
+              <span className="inline-block w-10 h-10 border-3 border-neutral-300 border-t-neutral-900 rounded-full animate-spin" />
+            ) : (
+              <>
+                <CheckCircle2 className="size-10 text-emerald-600" />
+                <span className="text-base font-medium text-neutral-900">
+                  Connected as {MOCK_USER.name}
+                </span>
+              </>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </main>
