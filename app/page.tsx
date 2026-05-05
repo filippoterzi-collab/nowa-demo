@@ -7,6 +7,7 @@ import { CheckCircle2 } from "lucide-react";
 import { getUSDCBalance } from "@/lib/usdc-balance";
 import { MOCK_USER, PLATFORMS, type PlatformId } from "@/lib/mock-data";
 import { PlatformPicker } from "@/components/platform-picker";
+import { AnalysisScreen } from "@/components/analysis-screen";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,12 +19,19 @@ import {
 } from "@/components/ui/dialog";
 
 type CashOutStatus = "idle" | "loading" | "success" | "error";
-type PlatformStatus = "not_selected" | "connecting" | "connected";
+type PlatformStatus =
+  | "not_selected"
+  | "connecting"
+  | "connected"
+  | "analyzing"
+  | "analysis_complete"
+  | "ready";
 
 const CASH_OUT_AMOUNT = 5;
 const BALANCE_REFETCH_DELAY_MS = 1500;
 const OAUTH_CONNECTING_MS = 2000;
 const OAUTH_SUCCESS_MS = 1500;
+const ANALYSIS_DURATION_MS = 3000;
 
 function matchSolanaError(message: string): string | null {
   const lc = message.toLowerCase();
@@ -98,7 +106,11 @@ export default function Home() {
   );
   const [showConnectedSuccess, setShowConnectedSuccess] = useState(false);
 
-  const oauthTimers = useRef<{ connecting?: number; success?: number }>({});
+  const oauthTimers = useRef<{
+    connecting?: number;
+    success?: number;
+    analysis?: number;
+  }>({});
 
   const clearOauthTimers = useCallback(() => {
     if (oauthTimers.current.connecting !== undefined) {
@@ -108,6 +120,10 @@ export default function Home() {
     if (oauthTimers.current.success !== undefined) {
       window.clearTimeout(oauthTimers.current.success);
       oauthTimers.current.success = undefined;
+    }
+    if (oauthTimers.current.analysis !== undefined) {
+      window.clearTimeout(oauthTimers.current.analysis);
+      oauthTimers.current.analysis = undefined;
     }
   }, []);
 
@@ -250,13 +266,19 @@ export default function Home() {
       setShowConnectedSuccess(false);
 
       oauthTimers.current.connecting = window.setTimeout(() => {
-        // Wallet may have disconnected during the 2s — bail in that case.
         if (!publicKey) return;
         setPlatformStatus("connected");
         setShowConnectedSuccess(true);
 
         oauthTimers.current.success = window.setTimeout(() => {
+          if (!publicKey) return;
           setShowConnectedSuccess(false);
+          setPlatformStatus("analyzing");
+
+          oauthTimers.current.analysis = window.setTimeout(() => {
+            if (!publicKey) return;
+            setPlatformStatus("analysis_complete");
+          }, ANALYSIS_DURATION_MS);
         }, OAUTH_SUCCESS_MS);
       }, OAUTH_CONNECTING_MS);
     },
@@ -271,6 +293,10 @@ export default function Home() {
     handleReset();
   }, [clearOauthTimers, handleReset]);
 
+  const handleAnalysisContinue = useCallback(() => {
+    setPlatformStatus("ready");
+  }, []);
+
   const address = publicKey?.toBase58();
   const truncated = address
     ? `${address.slice(0, 4)}…${address.slice(-4)}`
@@ -281,6 +307,10 @@ export default function Home() {
   const oauthModalOpen =
     platformStatus === "connecting" ||
     (platformStatus === "connected" && showConnectedSuccess);
+  const isPostOauth =
+    platformStatus === "analyzing" ||
+    platformStatus === "analysis_complete" ||
+    platformStatus === "ready";
 
   return (
     <main className="flex flex-1 flex-col items-center justify-center px-6 py-12">
@@ -309,7 +339,7 @@ export default function Home() {
                 >
                   {truncated}
                 </div>
-                {platformStatus === "connected" && selectedPlatformObj && (
+                {isPostOauth && selectedPlatformObj && (
                   <div className="text-xs text-neutral-700 px-3 py-1.5 rounded-full border border-neutral-200 bg-neutral-50">
                     {selectedPlatformObj.name}
                   </div>
@@ -332,7 +362,7 @@ export default function Home() {
                 >
                   Disconnect
                 </button>
-                {platformStatus === "connected" && (
+                {isPostOauth && (
                   <button
                     onClick={handleSwitchPlatform}
                     className="text-xs text-neutral-500 hover:text-neutral-700 underline underline-offset-2"
@@ -343,7 +373,7 @@ export default function Home() {
               </div>
             </div>
 
-            {platformStatus === "connected" ? (
+            {platformStatus === "ready" ? (
               <div className="w-full rounded-2xl border border-neutral-200 p-5 flex flex-col gap-4">
                 {cashOutStatus === "success" ? (
                   <>
@@ -415,6 +445,13 @@ export default function Home() {
                   </>
                 )}
               </div>
+            ) : platformStatus === "analyzing" ||
+              platformStatus === "analysis_complete" ? (
+              <AnalysisScreen
+                user={MOCK_USER}
+                status={platformStatus}
+                onContinue={handleAnalysisContinue}
+              />
             ) : (
               <PlatformPicker onSelect={handlePlatformSelect} />
             )}
