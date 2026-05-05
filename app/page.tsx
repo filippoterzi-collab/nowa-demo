@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { getUSDCBalance } from "@/lib/usdc-balance";
+import { checkActiveLoan } from "@/lib/loan-history";
 import { MOCK_USER, PLATFORMS, type PlatformId } from "@/lib/mock-data";
 import { PlatformPicker } from "@/components/platform-picker";
 import { AnalysisScreen } from "@/components/analysis-screen";
@@ -132,6 +133,9 @@ export default function Home() {
   const [repayErrorMessage, setRepayErrorMessage] = useState<string | null>(
     null
   );
+  const [loanRestoreStatus, setLoanRestoreStatus] = useState<
+    "idle" | "checking" | "done"
+  >("idle");
 
   const safeCashOutAmount =
     typeof cashOutAmount === "number" && !isNaN(cashOutAmount)
@@ -170,6 +174,33 @@ export default function Home() {
       }
     };
   }, [clearOauthTimers]);
+
+  useEffect(() => {
+    if (!publicKey) {
+      setLoanRestoreStatus("idle");
+      return;
+    }
+
+    let cancelled = false;
+    setLoanRestoreStatus("checking");
+
+    checkActiveLoan(publicKey).then((loan) => {
+      if (cancelled) return;
+      if (loan) {
+        setCashOutAmount(loan.amount);
+        setLoanStartTimestamp(loan.borrowedAt);
+        setLastSignature(loan.cashOutSignature);
+        setLastSolscanUrl(loan.cashOutSolscanUrl);
+        setCashOutStatus("success");
+        setPlatformStatus("ready");
+      }
+      setLoanRestoreStatus("done");
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [publicKey]);
 
   useEffect(() => {
     if (!publicKey) {
@@ -605,7 +636,14 @@ export default function Home() {
               </div>
             </div>
 
-            {platformStatus === "ready" ? (
+            {loanRestoreStatus === "checking" ? (
+              <div className="w-full flex flex-col items-center gap-3 py-8">
+                <span className="inline-block w-6 h-6 border-2 border-neutral-300 border-t-neutral-900 rounded-full animate-spin" />
+                <div className="text-sm text-neutral-500">
+                  Restoring session…
+                </div>
+              </div>
+            ) : platformStatus === "ready" ? (
               cashOutStatus === "success" ? (
                 <ActiveLoanCard
                   borrowedAmount={safeCashOutAmount}
