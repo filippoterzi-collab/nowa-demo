@@ -35,7 +35,7 @@ This is a hackathon demo for the Solana Frontier Hackathon by Colosseum (deadlin
 
 4. **The cash-out and repayment transactions must succeed on devnet and return real signatures.** If a transaction fails, the UI must show the error clearly, not a fake success state.
 
-5. **No localStorage, sessionStorage, or browser storage APIs.** Use React state only.
+5. **Persistence is on-chain — read Solana directly rather than browser storage.** Active loans are reconstructed on wallet connect from recent USDC transfers between user and treasury (chunked `getParsedTransaction` on the user's USDC ATA, public devnet RPC for that read-only query). React state holds in-flight UI only; the chain is the source of truth.
 
 ## Test Wallet (mine, for development)
 
@@ -137,11 +137,12 @@ The demo is a 6-step linear flow. All platform integrations are mocked; both Sol
 - User clicks "Repay now"
 - Trigger a real USDC SPL token transfer on Solana devnet from the user's wallet back to the treasury wallet
 - **Demo simplification**: the user repays only $100 (the principal), not $102. The $2 fee is "waived for demo" — note this clearly in a small disclaimer in the UI: "Demo: fee waived for testing. In production, repayment includes the 2% fee."
-- Show loading state: "Processing repayment..."
-- On success: show a final success state:
-  - "Loan repaid"
-  - Link to the second Solscan transaction
-  - Button to "Start over" (resets the demo to Step 1)
+- Loading state: spinner + "Confirming…" inline inside the Repay button (button stays in place, disabled)
+- On success: the button area is replaced by a success state showing:
+  - Green checkmark icon + "Repayment confirmed"
+  - "View on Solscan" link to the repay transaction
+  - Brand-themed confetti burst (emerald + neutral palette) at the moment of success
+- **Y-loop transition**: after 4 seconds, auto-transition back to the Choose Amount screen (same wallet, same platform — ready for another cycle without re-doing OAuth or analysis). Clicking "View on Solscan" cancels the auto-transition timer so the user can verify on Solscan and remain on the success card.
 
 ## Revenue Model Positioning
 
