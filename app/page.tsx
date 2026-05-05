@@ -67,7 +67,7 @@ function getDisplayError(rawError: unknown): string {
 }
 
 export default function Home() {
-  const { publicKey, disconnect } = useWallet();
+  const { publicKey, disconnect, signMessage } = useWallet();
   const { connection } = useConnection();
   const [mounted, setMounted] = useState(false);
   const [cashOutStatus, setCashOutStatus] = useState<CashOutStatus>("idle");
@@ -82,6 +82,7 @@ export default function Home() {
 
   useEffect(() => {
     if (!publicKey) {
+      setErrorMessage(null);
       setUsdcBalance(null);
       return;
     }
@@ -104,6 +105,29 @@ export default function Home() {
     setCashOutStatus("loading");
     setErrorMessage(null);
 
+    if (!signMessage) {
+      setErrorMessage(
+        "Your wallet doesn't support message signing. Try Phantom."
+      );
+      setCashOutStatus("error");
+      return;
+    }
+
+    const messageString = `NOWA cash-out request: $${CASH_OUT_AMOUNT} to ${publicKey.toBase58()} at ${Date.now()}`;
+    const messageBytes = new TextEncoder().encode(messageString);
+
+    let signatureBytes: Uint8Array;
+    try {
+      signatureBytes = await signMessage(messageBytes);
+    } catch {
+      // User declined or wallet error — treated as cancellation per spec, not failure.
+      setErrorMessage("You declined to sign. Cash-out cancelled.");
+      setCashOutStatus("idle");
+      return;
+    }
+
+    const signatureBase64 = btoa(String.fromCharCode(...signatureBytes));
+
     let res: Response;
     try {
       res = await fetch("/api/cash-out", {
@@ -112,6 +136,8 @@ export default function Home() {
         body: JSON.stringify({
           amount: CASH_OUT_AMOUNT,
           recipientAddress: publicKey.toBase58(),
+          signature: signatureBase64,
+          signedMessage: messageString,
         }),
       });
     } catch (err) {
@@ -161,7 +187,7 @@ export default function Home() {
       setErrorMessage(getDisplayError(new Error("Unexpected response")));
       setCashOutStatus("error");
     }
-  }, [publicKey, connection]);
+  }, [publicKey, connection, signMessage]);
 
   const handleReset = useCallback(() => {
     setCashOutStatus("idle");
@@ -274,8 +300,16 @@ export default function Home() {
                       `Cash out $${CASH_OUT_AMOUNT}`
                     )}
                   </button>
-                  {cashOutStatus === "error" && errorMessage && (
-                    <div className="text-sm text-red-600">{errorMessage}</div>
+                  {errorMessage && (
+                    <div
+                      className={`text-sm ${
+                        cashOutStatus === "error"
+                          ? "text-red-600"
+                          : "text-neutral-600"
+                      }`}
+                    >
+                      {errorMessage}
+                    </div>
                   )}
                 </>
               )}
