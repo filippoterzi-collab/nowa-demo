@@ -2,8 +2,10 @@
 
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { VersionedTransaction } from "@solana/web3.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
+import confetti from "canvas-confetti";
 import { getUSDCBalance } from "@/lib/usdc-balance";
 import { MOCK_USER, PLATFORMS, type PlatformId } from "@/lib/mock-data";
 import { PlatformPicker } from "@/components/platform-picker";
@@ -21,6 +23,7 @@ import {
 } from "@/components/ui/dialog";
 
 type CashOutStatus = "idle" | "loading" | "success" | "error";
+type RepayStatus = "idle" | "loading" | "success" | "error";
 type PlatformStatus =
   | "not_selected"
   | "connecting"
@@ -100,7 +103,7 @@ function formatConfirmAmount(amount: number): string {
 }
 
 export default function Home() {
-  const { publicKey, disconnect, signMessage } = useWallet();
+  const { publicKey, disconnect, signMessage, signTransaction } = useWallet();
   const { connection } = useConnection();
   const [mounted, setMounted] = useState(false);
   const [cashOutStatus, setCashOutStatus] = useState<CashOutStatus>("idle");
@@ -119,6 +122,16 @@ export default function Home() {
   const [loanStartTimestamp, setLoanStartTimestamp] = useState<number | null>(
     null
   );
+  const [repayStatus, setRepayStatus] = useState<RepayStatus>("idle");
+  const [repayLastSignature, setRepayLastSignature] = useState<string | null>(
+    null
+  );
+  const [repayLastSolscanUrl, setRepayLastSolscanUrl] = useState<string | null>(
+    null
+  );
+  const [repayErrorMessage, setRepayErrorMessage] = useState<string | null>(
+    null
+  );
 
   const safeCashOutAmount =
     typeof cashOutAmount === "number" && !isNaN(cashOutAmount)
@@ -130,6 +143,8 @@ export default function Home() {
     success?: number;
     analysis?: number;
   }>({});
+
+  const repaySuccessTimerRef = useRef<number | null>(null);
 
   const clearOauthTimers = useCallback(() => {
     if (oauthTimers.current.connecting !== undefined) {
@@ -150,6 +165,9 @@ export default function Home() {
     setMounted(true);
     return () => {
       clearOauthTimers();
+      if (repaySuccessTimerRef.current !== null) {
+        window.clearTimeout(repaySuccessTimerRef.current);
+      }
     };
   }, [clearOauthTimers]);
 
@@ -163,6 +181,14 @@ export default function Home() {
       setShowConnectedSuccess(false);
       setCashOutAmount(CASH_OUT_DEFAULT);
       setLoanStartTimestamp(null);
+      if (repaySuccessTimerRef.current !== null) {
+        window.clearTimeout(repaySuccessTimerRef.current);
+        repaySuccessTimerRef.current = null;
+      }
+      setRepayStatus("idle");
+      setRepayLastSignature(null);
+      setRepayLastSolscanUrl(null);
+      setRepayErrorMessage(null);
       return;
     }
     let cancelled = false;
@@ -320,6 +346,186 @@ export default function Home() {
     setPlatformStatus("ready");
   }, []);
 
+  const cancelRepaySuccessTimer = useCallback(() => {
+    if (repaySuccessTimerRef.current !== null) {
+      window.clearTimeout(repaySuccessTimerRef.current);
+      repaySuccessTimerRef.current = null;
+    }
+  }, []);
+
+  const handleRepay = useCallback(async () => {
+    if (!publicKey) return;
+    if (!signTransaction) {
+      setRepayErrorMessage(
+        "Your wallet doesn't support transaction signing. Try Phantom."
+      );
+      setRepayStatus("error");
+      return;
+    }
+
+    setRepayStatus("loading");
+    setRepayErrorMessage(null);
+
+    let buildRes: Response;
+    try {
+      buildRes = await fetch("/api/repay/build-transaction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          amount: safeCashOutAmount,
+          userAddress: publicKey.toBase58(),
+        }),
+      });
+    } catch (err) {
+      setRepayErrorMessage(getDisplayError(err));
+      setRepayStatus("error");
+      return;
+    }
+
+    let buildData: unknown;
+    try {
+      buildData = await buildRes.json();
+    } catch (err) {
+      setRepayErrorMessage(getDisplayError(err));
+      setRepayStatus("error");
+      return;
+    }
+
+    if (!buildRes.ok) {
+      const message =
+        buildData && typeof buildData === "object" && "error" in buildData
+          ? String((buildData as { error: unknown }).error)
+          : "";
+      setRepayErrorMessage(
+        getDisplayError({ status: buildRes.status, message })
+      );
+      setRepayStatus("error");
+      return;
+    }
+
+    if (
+      !buildData ||
+      typeof buildData !== "object" ||
+      !("transactionBase64" in buildData) ||
+      !("lastValidBlockHeight" in buildData)
+    ) {
+      setRepayErrorMessage(
+        getDisplayError(new Error("Unexpected build response"))
+      );
+      setRepayStatus("error");
+      return;
+    }
+
+    const { transactionBase64, lastValidBlockHeight } = buildData as {
+      transactionBase64: string;
+      lastValidBlockHeight: number;
+    };
+
+    let tx: VersionedTransaction;
+    try {
+      const bytes = Uint8Array.from(atob(transactionBase64), (c) =>
+        c.charCodeAt(0)
+      );
+      tx = VersionedTransaction.deserialize(bytes);
+    } catch (err) {
+      setRepayErrorMessage(getDisplayError(err));
+      setRepayStatus("error");
+      return;
+    }
+
+    let signedTx: VersionedTransaction;
+    try {
+      signedTx = await signTransaction(tx);
+    } catch {
+      setRepayErrorMessage("You declined to sign. Repayment cancelled.");
+      setRepayStatus("idle");
+      return;
+    }
+
+    const signedBytes = signedTx.serialize();
+    const signedTransactionBase64 = btoa(String.fromCharCode(...signedBytes));
+
+    let submitRes: Response;
+    try {
+      submitRes = await fetch("/api/repay/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          signedTransactionBase64,
+          userAddress: publicKey.toBase58(),
+          amount: safeCashOutAmount,
+          lastValidBlockHeight,
+        }),
+      });
+    } catch (err) {
+      setRepayErrorMessage(getDisplayError(err));
+      setRepayStatus("error");
+      return;
+    }
+
+    let submitData: unknown;
+    try {
+      submitData = await submitRes.json();
+    } catch (err) {
+      setRepayErrorMessage(getDisplayError(err));
+      setRepayStatus("error");
+      return;
+    }
+
+    if (!submitRes.ok) {
+      const message =
+        submitData && typeof submitData === "object" && "error" in submitData
+          ? String((submitData as { error: unknown }).error)
+          : "";
+      setRepayErrorMessage(
+        getDisplayError({ status: submitRes.status, message })
+      );
+      setRepayStatus("error");
+      return;
+    }
+
+    if (
+      submitData &&
+      typeof submitData === "object" &&
+      "signature" in submitData &&
+      "solscanUrl" in submitData
+    ) {
+      const d = submitData as { signature: string; solscanUrl: string };
+      setRepayLastSignature(d.signature);
+      setRepayLastSolscanUrl(d.solscanUrl);
+      setRepayStatus("success");
+
+      confetti({
+        particleCount: 80,
+        spread: 60,
+        origin: { y: 0.6 },
+        colors: ["#10b981", "#34d399", "#6ee7b7", "#9ca3af", "#d1d5db"],
+      });
+
+      window.setTimeout(() => {
+        getUSDCBalance(connection, publicKey)
+          .then((bal) => setUsdcBalance(bal))
+          .catch(() => {
+            // Keep stale balance on transient RPC error.
+          });
+      }, BALANCE_REFETCH_DELAY_MS);
+
+      repaySuccessTimerRef.current = window.setTimeout(() => {
+        handleReset();
+        setRepayStatus("idle");
+        setRepayLastSignature(null);
+        setRepayLastSolscanUrl(null);
+        setRepayErrorMessage(null);
+        repaySuccessTimerRef.current = null;
+      }, 4000);
+    } else {
+      setRepayErrorMessage(
+        getDisplayError(new Error("Unexpected submit response"))
+      );
+      setRepayStatus("error");
+    }
+  }, [publicKey, signTransaction, safeCashOutAmount, connection, handleReset]);
+
   const address = publicKey?.toBase58();
   const truncated = address
     ? `${address.slice(0, 4)}…${address.slice(-4)}`
@@ -406,7 +612,11 @@ export default function Home() {
                   loanStartTimestamp={loanStartTimestamp}
                   signature={lastSignature}
                   solscanUrl={lastSolscanUrl}
-                  onRepayClick={() => {}}
+                  onRepayClick={handleRepay}
+                  repayStatus={repayStatus}
+                  repayErrorMessage={repayErrorMessage}
+                  repaySolscanUrl={repayLastSolscanUrl}
+                  onRepaySolscanClick={cancelRepaySuccessTimer}
                 />
               ) : (
                 <ChooseAmountScreen

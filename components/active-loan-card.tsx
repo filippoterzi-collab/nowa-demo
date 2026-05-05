@@ -1,8 +1,11 @@
 "use client";
 
+import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { FEE_PERCENTAGE, REPAYMENT_DAYS } from "@/lib/mock-data";
+
+type RepayStatus = "idle" | "loading" | "success" | "error";
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -23,12 +26,20 @@ export function ActiveLoanCard({
   signature,
   solscanUrl,
   onRepayClick,
+  repayStatus,
+  repayErrorMessage,
+  repaySolscanUrl,
+  onRepaySolscanClick,
 }: {
   borrowedAmount: number;
   loanStartTimestamp: number | null;
   signature: string | null;
   solscanUrl: string | null;
   onRepayClick: () => void;
+  repayStatus: RepayStatus;
+  repayErrorMessage: string | null;
+  repaySolscanUrl: string | null;
+  onRepaySolscanClick?: () => void;
 }) {
   if (!loanStartTimestamp) return null;
 
@@ -74,19 +85,73 @@ export function ActiveLoanCard({
         </div>
       </div>
 
-      <Button
-        variant="default"
-        size="lg"
-        className="w-full"
-        onClick={onRepayClick}
-      >
-        Repay ${borrowedAmount}
-      </Button>
+      {repayStatus === "success" ? (
+        <div className="flex flex-col items-center gap-2 py-2">
+          <CheckCircle2 className="size-10 text-emerald-600" />
+          <div className="text-base font-medium text-neutral-900">
+            Repayment confirmed
+          </div>
+          {repaySolscanUrl && (
+            <a
+              href={repaySolscanUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={onRepaySolscanClick}
+              className="text-sm text-neutral-700 underline underline-offset-2 hover:text-neutral-900"
+            >
+              View on Solscan
+            </a>
+          )}
+        </div>
+      ) : (
+        <>
+          <Button
+            variant="default"
+            size="lg"
+            className="w-full"
+            disabled={repayStatus === "loading"}
+            onClick={onRepayClick}
+          >
+            {repayStatus === "loading" ? (
+              <>
+                <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Confirming…
+              </>
+            ) : (
+              `Repay $${borrowedAmount}`
+            )}
+          </Button>
+          {repayErrorMessage && (
+            <div
+              className={`text-sm ${
+                repayStatus === "error"
+                  ? "text-red-600"
+                  : "text-neutral-600"
+              }`}
+            >
+              {repayErrorMessage}
+            </div>
+          )}
+        </>
+      )}
 
-      <div className="text-xs text-neutral-500">
-        Demo: fee waived for testing. In production, repayment includes the 2%
-        fee.
-      </div>
+      {repayStatus !== "success" && (
+        <div className="text-xs text-neutral-500">
+          Demo: fee waived for testing. In production, repayment includes the
+          2% fee.
+        </div>
+      )}
+
+      {(repayStatus === "idle" || repayStatus === "error") && (
+        <div className="text-xs text-amber-700 flex items-start gap-1.5">
+          <AlertTriangle className="size-3.5 shrink-0 mt-0.5" />
+          <span>
+            Note: Phantom may show &ldquo;simulation may revert&rdquo; on
+            devnet for demo tokens. The transaction works correctly &mdash;
+            verify on Solscan after confirming.
+          </span>
+        </div>
+      )}
 
       <div className="border-t border-neutral-200 pt-3 flex flex-col gap-1">
         <div className="text-xs text-neutral-500">✓ Funded</div>
