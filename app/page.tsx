@@ -9,6 +9,7 @@ import { MOCK_USER, PLATFORMS, type PlatformId } from "@/lib/mock-data";
 import { PlatformPicker } from "@/components/platform-picker";
 import { AnalysisScreen } from "@/components/analysis-screen";
 import { ChooseAmountScreen } from "@/components/choose-amount-screen";
+import { ActiveLoanCard } from "@/components/active-loan-card";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -115,6 +116,9 @@ export default function Home() {
   );
   const [showConnectedSuccess, setShowConnectedSuccess] = useState(false);
   const [cashOutAmount, setCashOutAmount] = useState<number>(CASH_OUT_DEFAULT);
+  const [loanStartTimestamp, setLoanStartTimestamp] = useState<number | null>(
+    null
+  );
 
   const safeCashOutAmount =
     typeof cashOutAmount === "number" && !isNaN(cashOutAmount)
@@ -158,6 +162,7 @@ export default function Home() {
       setSelectedPlatform(null);
       setShowConnectedSuccess(false);
       setCashOutAmount(CASH_OUT_DEFAULT);
+      setLoanStartTimestamp(null);
       return;
     }
     let cancelled = false;
@@ -247,6 +252,7 @@ export default function Home() {
       const d = data as { signature: string; solscanUrl: string };
       setLastSignature(d.signature);
       setLastSolscanUrl(d.solscanUrl);
+      setLoanStartTimestamp(Date.now());
       setCashOutStatus("success");
 
       window.setTimeout(() => {
@@ -267,6 +273,7 @@ export default function Home() {
     setLastSignature(null);
     setLastSolscanUrl(null);
     setErrorMessage(null);
+    setLoanStartTimestamp(null);
   }, []);
 
   const handleConfirm = useCallback(() => {
@@ -327,6 +334,7 @@ export default function Home() {
     platformStatus === "analyzing" ||
     platformStatus === "analysis_complete" ||
     platformStatus === "ready";
+  const canSwitchPlatform = isPostOauth && cashOutStatus !== "success";
   const chooseAmountStatus: "idle" | "loading" | "error" =
     cashOutStatus === "success" ? "idle" : cashOutStatus;
 
@@ -380,7 +388,7 @@ export default function Home() {
                 >
                   Disconnect
                 </button>
-                {isPostOauth && (
+                {canSwitchPlatform && (
                   <button
                     onClick={handleSwitchPlatform}
                     className="text-xs text-neutral-500 hover:text-neutral-700 underline underline-offset-2"
@@ -393,35 +401,13 @@ export default function Home() {
 
             {platformStatus === "ready" ? (
               cashOutStatus === "success" ? (
-                <div className="w-full rounded-2xl border border-neutral-200 p-5 flex flex-col gap-4">
-                  <div className="text-base font-semibold text-neutral-900">
-                    ✓ ${safeCashOutAmount} USDC received
-                  </div>
-                  {lastSolscanUrl && (
-                    <a
-                      href={lastSolscanUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm text-neutral-700 underline underline-offset-2 hover:text-neutral-900"
-                    >
-                      View on Solscan
-                    </a>
-                  )}
-                  {lastSignature && (
-                    <div
-                      className="font-mono text-xs text-neutral-400 truncate"
-                      title={lastSignature}
-                    >
-                      {lastSignature.slice(0, 8)}…{lastSignature.slice(-8)}
-                    </div>
-                  )}
-                  <button
-                    onClick={handleReset}
-                    className="w-full h-11 rounded-lg border border-neutral-200 text-sm font-medium text-neutral-900 hover:bg-neutral-50 transition-colors"
-                  >
-                    Try again
-                  </button>
-                </div>
+                <ActiveLoanCard
+                  borrowedAmount={safeCashOutAmount}
+                  loanStartTimestamp={loanStartTimestamp}
+                  signature={lastSignature}
+                  solscanUrl={lastSolscanUrl}
+                  onRepayClick={() => {}}
+                />
               ) : (
                 <ChooseAmountScreen
                   value={safeCashOutAmount}
