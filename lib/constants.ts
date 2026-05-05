@@ -1,8 +1,14 @@
+// TODO: when deploying to Vercel, set these env vars in the Vercel project's settings:
+//   - NEXT_PUBLIC_HELIUS_API_KEY
+//   - NEXT_PUBLIC_TREASURY_ADDRESS
+//   - NEXT_PUBLIC_USDC_MINT_ADDRESS  (renamed from USDC_MINT_ADDRESS in Day 2 step 3 — old configs will break the client bundle)
+//   - TREASURY_PRIVATE_KEY  (server-side only, no NEXT_PUBLIC_ prefix)
+
 import { PublicKey } from "@solana/web3.js";
 
-const usdcMintAddress = process.env.USDC_MINT_ADDRESS;
+const usdcMintAddress = process.env.NEXT_PUBLIC_USDC_MINT_ADDRESS;
 if (!usdcMintAddress) {
-  throw new Error("USDC_MINT_ADDRESS is not set in .env.local");
+  throw new Error("NEXT_PUBLIC_USDC_MINT_ADDRESS is not set in .env.local");
 }
 
 const treasuryAddress = process.env.NEXT_PUBLIC_TREASURY_ADDRESS;

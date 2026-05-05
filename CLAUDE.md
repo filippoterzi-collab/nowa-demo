@@ -31,7 +31,7 @@ This is a hackathon demo for the Solana Frontier Hackathon by Colosseum (deadlin
 
 2. **Never commit secrets.** Treasury private key, Helius API key, and any sensitive config must live in `.env.local`. The `.env.local` file must be in `.gitignore`. Use `process.env` to access them.
 
-3. **USDC mint address (devnet):** We create our own mock USDC SPL token on devnet for demo reliability. The mint address is generated during setup and stored in `.env.local` as `USDC_MINT_ADDRESS`. Hardcode it as a constant in `lib/constants.ts` after creation. In the pitch video, disclose that we use a mock token for demo purposes; production would use Circle's official USDC mint.
+3. **USDC mint address (devnet):** We create our own mock USDC SPL token on devnet for demo reliability. The mint address is generated during setup and stored in `.env.local` as `NEXT_PUBLIC_USDC_MINT_ADDRESS`. Hardcode it as a constant in `lib/constants.ts` after creation. In the pitch video, disclose that we use a mock token for demo purposes; production would use Circle's official USDC mint.
 
 4. **The cash-out and repayment transactions must succeed on devnet and return real signatures.** If a transaction fails, the UI must show the error clearly, not a fake success state.
 
@@ -182,7 +182,7 @@ If either fails, the demo fails. Prioritize making these two transactions rock-s
 ## Deployment
 
 - **Target:** Vercel
-- Environment variables required on Vercel: `NEXT_PUBLIC_HELIUS_API_KEY`, `TREASURY_PRIVATE_KEY` (server-side only, never expose to client), `USDC_MINT_ADDRESS`
+- Environment variables required on Vercel: `NEXT_PUBLIC_HELIUS_API_KEY`, `TREASURY_PRIVATE_KEY` (server-side only, never expose to client), `NEXT_PUBLIC_USDC_MINT_ADDRESS`
 - The treasury private key MUST be used only in server-side code (API routes), never in client components.
 
 ## Submission Checklist (don't forget for May 11)
