@@ -8,6 +8,7 @@ import { getUSDCBalance } from "@/lib/usdc-balance";
 import { MOCK_USER, PLATFORMS, type PlatformId } from "@/lib/mock-data";
 import { PlatformPicker } from "@/components/platform-picker";
 import { AnalysisScreen } from "@/components/analysis-screen";
+import { ChooseAmountScreen } from "@/components/choose-amount-screen";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -27,7 +28,10 @@ type PlatformStatus =
   | "analysis_complete"
   | "ready";
 
-const CASH_OUT_AMOUNT = 5;
+const CASH_OUT_MIN = 10;
+const CASH_OUT_MAX = MOCK_USER.maxAdvance;
+const CASH_OUT_STEP = 1;
+const CASH_OUT_DEFAULT = 50;
 const BALANCE_REFETCH_DELAY_MS = 1500;
 const OAUTH_CONNECTING_MS = 2000;
 const OAUTH_SUCCESS_MS = 1500;
@@ -89,6 +93,11 @@ function getDisplayError(rawError: unknown): string {
   return "Something went wrong. Please try again.";
 }
 
+function formatConfirmAmount(amount: number): string {
+  if (typeof amount !== "number" || isNaN(amount)) return "0";
+  return Number.isInteger(amount) ? amount.toString() : amount.toFixed(2);
+}
+
 export default function Home() {
   const { publicKey, disconnect, signMessage } = useWallet();
   const { connection } = useConnection();
@@ -105,6 +114,12 @@ export default function Home() {
     null
   );
   const [showConnectedSuccess, setShowConnectedSuccess] = useState(false);
+  const [cashOutAmount, setCashOutAmount] = useState<number>(CASH_OUT_DEFAULT);
+
+  const safeCashOutAmount =
+    typeof cashOutAmount === "number" && !isNaN(cashOutAmount)
+      ? cashOutAmount
+      : CASH_OUT_DEFAULT;
 
   const oauthTimers = useRef<{
     connecting?: number;
@@ -142,6 +157,7 @@ export default function Home() {
       setPlatformStatus("not_selected");
       setSelectedPlatform(null);
       setShowConnectedSuccess(false);
+      setCashOutAmount(CASH_OUT_DEFAULT);
       return;
     }
     let cancelled = false;
@@ -171,7 +187,7 @@ export default function Home() {
       return;
     }
 
-    const messageString = `NOWA cash-out request: $${CASH_OUT_AMOUNT} to ${publicKey.toBase58()} at ${Date.now()}`;
+    const messageString = `NOWA cash-out request: $${safeCashOutAmount} to ${publicKey.toBase58()} at ${Date.now()}`;
     const messageBytes = new TextEncoder().encode(messageString);
 
     let signatureBytes: Uint8Array;
@@ -191,7 +207,7 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          amount: CASH_OUT_AMOUNT,
+          amount: safeCashOutAmount,
           recipientAddress: publicKey.toBase58(),
           signature: signatureBase64,
           signedMessage: messageString,
@@ -244,7 +260,7 @@ export default function Home() {
       setErrorMessage(getDisplayError(new Error("Unexpected response")));
       setCashOutStatus("error");
     }
-  }, [publicKey, connection, signMessage]);
+  }, [publicKey, connection, signMessage, safeCashOutAmount]);
 
   const handleReset = useCallback(() => {
     setCashOutStatus("idle");
@@ -311,6 +327,8 @@ export default function Home() {
     platformStatus === "analyzing" ||
     platformStatus === "analysis_complete" ||
     platformStatus === "ready";
+  const chooseAmountStatus: "idle" | "loading" | "error" =
+    cashOutStatus === "success" ? "idle" : cashOutStatus;
 
   return (
     <main className="flex flex-1 flex-col items-center justify-center px-6 py-12">
@@ -374,77 +392,48 @@ export default function Home() {
             </div>
 
             {platformStatus === "ready" ? (
-              <div className="w-full rounded-2xl border border-neutral-200 p-5 flex flex-col gap-4">
-                {cashOutStatus === "success" ? (
-                  <>
-                    <div className="text-base font-semibold text-neutral-900">
-                      ✓ ${CASH_OUT_AMOUNT} USDC received
-                    </div>
-                    {lastSolscanUrl && (
-                      <a
-                        href={lastSolscanUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm text-neutral-700 underline underline-offset-2 hover:text-neutral-900"
-                      >
-                        View on Solscan
-                      </a>
-                    )}
-                    {lastSignature && (
-                      <div
-                        className="font-mono text-xs text-neutral-400 truncate"
-                        title={lastSignature}
-                      >
-                        {lastSignature.slice(0, 8)}…{lastSignature.slice(-8)}
-                      </div>
-                    )}
-                    <button
-                      onClick={handleReset}
-                      className="w-full h-11 rounded-lg border border-neutral-200 text-sm font-medium text-neutral-900 hover:bg-neutral-50 transition-colors"
+              cashOutStatus === "success" ? (
+                <div className="w-full rounded-2xl border border-neutral-200 p-5 flex flex-col gap-4">
+                  <div className="text-base font-semibold text-neutral-900">
+                    ✓ ${safeCashOutAmount} USDC received
+                  </div>
+                  {lastSolscanUrl && (
+                    <a
+                      href={lastSolscanUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-neutral-700 underline underline-offset-2 hover:text-neutral-900"
                     >
-                      Try again
-                    </button>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex flex-col gap-1">
-                      <div className="text-base font-semibold text-neutral-900">
-                        {selectedPlatformObj?.name ?? "Upwork"}
-                      </div>
-                      <div className="text-sm text-neutral-500">
-                        ${CASH_OUT_AMOUNT.toFixed(2)} pending
-                      </div>
-                    </div>
-                    <Button
-                      variant="default"
-                      size="lg"
-                      className="w-full"
-                      disabled={cashOutStatus === "loading"}
-                      onClick={() => setShowConfirmDialog(true)}
+                      View on Solscan
+                    </a>
+                  )}
+                  {lastSignature && (
+                    <div
+                      className="font-mono text-xs text-neutral-400 truncate"
+                      title={lastSignature}
                     >
-                      {cashOutStatus === "loading" ? (
-                        <>
-                          <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          Sending…
-                        </>
-                      ) : (
-                        `Cash out $${CASH_OUT_AMOUNT}`
-                      )}
-                    </Button>
-                    {errorMessage && (
-                      <div
-                        className={`text-sm ${
-                          cashOutStatus === "error"
-                            ? "text-red-600"
-                            : "text-neutral-600"
-                        }`}
-                      >
-                        {errorMessage}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
+                      {lastSignature.slice(0, 8)}…{lastSignature.slice(-8)}
+                    </div>
+                  )}
+                  <button
+                    onClick={handleReset}
+                    className="w-full h-11 rounded-lg border border-neutral-200 text-sm font-medium text-neutral-900 hover:bg-neutral-50 transition-colors"
+                  >
+                    Try again
+                  </button>
+                </div>
+              ) : (
+                <ChooseAmountScreen
+                  value={safeCashOutAmount}
+                  onChange={setCashOutAmount}
+                  min={CASH_OUT_MIN}
+                  max={CASH_OUT_MAX}
+                  step={CASH_OUT_STEP}
+                  onCashOut={() => setShowConfirmDialog(true)}
+                  status={chooseAmountStatus}
+                  errorMessage={errorMessage}
+                />
+              )
             ) : platformStatus === "analyzing" ||
               platformStatus === "analysis_complete" ? (
               <AnalysisScreen
@@ -469,7 +458,7 @@ export default function Home() {
           </DialogHeader>
           <div className="py-4 flex justify-center">
             <span className="text-4xl font-semibold text-emerald-600 tabular-nums">
-              + ${CASH_OUT_AMOUNT.toFixed(2)} USDC
+              + ${formatConfirmAmount(safeCashOutAmount)} USDC
             </span>
           </div>
           <DialogFooter className="flex-row gap-2">
