@@ -142,7 +142,7 @@ The demo is a 6-step linear flow. All platform integrations are mocked; both Sol
   - Green checkmark icon + "Repayment confirmed"
   - "View on Solscan" link to the repay transaction
   - Brand-themed confetti burst (emerald + neutral palette) at the moment of success
-- **Y-loop transition**: after 4 seconds, auto-transition back to the Choose Amount screen (same wallet, same platform — ready for another cycle without re-doing OAuth or analysis). Clicking "View on Solscan" cancels the auto-transition timer so the user can verify on Solscan and remain on the success card.
+- **Post-repay flow**: after 4 seconds, full reset to the Choose Platform picker — `selectedPlatform = null`, `platformStatus = "not_selected"`, all loan + cash-out state cleared. The user re-picks a platform, re-does OAuth + analysis, lands on Choose Amount for the next cycle. Clicking "View on Solscan" cancels the auto-transition timer so the user can verify on Solscan and remain on the success card.
 
 ## Revenue Model Positioning
 

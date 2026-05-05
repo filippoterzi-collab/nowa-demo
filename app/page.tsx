@@ -13,6 +13,7 @@ import { PlatformPicker } from "@/components/platform-picker";
 import { AnalysisScreen } from "@/components/analysis-screen";
 import { ChooseAmountScreen } from "@/components/choose-amount-screen";
 import { ActiveLoanCard } from "@/components/active-loan-card";
+import { ActiveLoanBlock } from "@/components/active-loan-block";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -377,6 +378,41 @@ export default function Home() {
     setPlatformStatus("ready");
   }, []);
 
+  const handleHome = useCallback(() => {
+    // Preserve loan-defining state (loanStartTimestamp, cashOutAmount,
+    // lastSignature, lastSolscanUrl) so the active-loan-exists check fires
+    // when the user returns via picker → OAuth → Choose Amount.
+    setSelectedPlatform(null);
+    setPlatformStatus("not_selected");
+    setCashOutStatus("idle");
+    setErrorMessage(null);
+    setShowConnectedSuccess(false);
+    setRepayStatus("idle");
+    setRepayLastSignature(null);
+    setRepayLastSolscanUrl(null);
+    setRepayErrorMessage(null);
+  }, []);
+
+  const handleFullReset = useCallback(() => {
+    handleReset();
+    setSelectedPlatform(null);
+    setPlatformStatus("not_selected");
+    setShowConnectedSuccess(false);
+    clearOauthTimers();
+    setRepayStatus("idle");
+    setRepayLastSignature(null);
+    setRepayLastSolscanUrl(null);
+    setRepayErrorMessage(null);
+  }, [handleReset, clearOauthTimers]);
+
+  const handleResumeActiveLoan = useCallback(() => {
+    // Returns user to the Active Loan card. Clears selectedPlatform so the
+    // chip stays consistent with on-chain restore: loans aren't tied to a
+    // specific platform on chain.
+    setSelectedPlatform(null);
+    setCashOutStatus("success");
+  }, []);
+
   const cancelRepaySuccessTimer = useCallback(() => {
     if (repaySuccessTimerRef.current !== null) {
       window.clearTimeout(repaySuccessTimerRef.current);
@@ -542,11 +578,7 @@ export default function Home() {
       }, BALANCE_REFETCH_DELAY_MS);
 
       repaySuccessTimerRef.current = window.setTimeout(() => {
-        handleReset();
-        setRepayStatus("idle");
-        setRepayLastSignature(null);
-        setRepayLastSolscanUrl(null);
-        setRepayErrorMessage(null);
+        handleFullReset();
         repaySuccessTimerRef.current = null;
       }, 4000);
     } else {
@@ -555,7 +587,7 @@ export default function Home() {
       );
       setRepayStatus("error");
     }
-  }, [publicKey, signTransaction, safeCashOutAmount, connection, handleReset]);
+  }, [publicKey, signTransaction, safeCashOutAmount, connection, handleFullReset]);
 
   const address = publicKey?.toBase58();
   const truncated = address
@@ -572,6 +604,7 @@ export default function Home() {
     platformStatus === "analysis_complete" ||
     platformStatus === "ready";
   const canSwitchPlatform = isPostOauth && cashOutStatus !== "success";
+  const hasActiveLoan = loanStartTimestamp !== null;
   const chooseAmountStatus: "idle" | "loading" | "error" =
     cashOutStatus === "success" ? "idle" : cashOutStatus;
 
@@ -633,6 +666,15 @@ export default function Home() {
                     Switch platform
                   </button>
                 )}
+                {cashOutStatus === "success" &&
+                  loanRestoreStatus === "done" && (
+                    <button
+                      onClick={handleHome}
+                      className="text-xs text-neutral-500 hover:text-neutral-700 underline underline-offset-2"
+                    >
+                      Home
+                    </button>
+                  )}
               </div>
             </div>
 
@@ -655,6 +697,11 @@ export default function Home() {
                   repayErrorMessage={repayErrorMessage}
                   repaySolscanUrl={repayLastSolscanUrl}
                   onRepaySolscanClick={cancelRepaySuccessTimer}
+                />
+              ) : hasActiveLoan ? (
+                <ActiveLoanBlock
+                  borrowedAmount={safeCashOutAmount}
+                  onResume={handleResumeActiveLoan}
                 />
               ) : (
                 <ChooseAmountScreen
