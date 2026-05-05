@@ -8,11 +8,11 @@ This is a hackathon demo for the Solana Frontier Hackathon by Colosseum (deadlin
 
 **One-liner:** Freelancers and creators wait weeks or months to get paid by platforms like Upwork, Fiverr, YouTube, and Spotify. This app lets them cash out their pending earnings instantly in USDC on Solana.
 
-**Demo scope:** A working prototype where a user connects a Solana wallet, sees a list of mock pending earnings from multiple platforms, clicks "Cash Out", and receives REAL mock-USDC on Solana devnet from a treasury wallet. The transaction must be verifiable on Solana Explorer.
+**Demo scope:** A working prototype where a user connects a Solana wallet, sees a list of mock pending earnings from multiple platforms, clicks "Cash Out", and receives REAL mock-USDC on Solana devnet from a treasury wallet. The transaction must be verifiable on Solscan.
 
 **What is mocked vs real:**
 - MOCKED: the platform integrations (Upwork API, Fiverr API, etc.). Pending earnings are hardcoded in the frontend. The "USDC" token is a mock SPL token we create on devnet, not Circle's official USDC.
-- REAL: the wallet connection, the SPL token transfer on Solana devnet, the transaction signature, the explorer link.
+- REAL: the wallet connection, the SPL token transfer on Solana devnet, the transaction signature, the Solscan link.
 
 ## Stack
 
@@ -85,7 +85,7 @@ This is a hackathon demo for the Solana Frontier Hackathon by Colosseum (deadlin
 
 6. **If something is unclear, ASK.** Don't assume my intent. I'd rather answer one question than rewrite a feature.
 
-7. **Use `solana logs` and Solana Explorer to verify transactions.** When a transaction is sent, confirm the signature exists on devnet by giving me the explorer link.
+7. **Use `solana logs` and Solscan to verify transactions.** When a transaction is sent, confirm the signature exists on devnet by giving me the Solscan link.
 
 ## Demo Flow (Definitive Spec)
 
@@ -120,8 +120,8 @@ The demo is a 6-step linear flow. All platform integrations are mocked; both Sol
 - Show loading state: "Sending USDC to your wallet..."
 - On success: show a success card with:
   - "$100 USDC received"
-  - Link to Solana Explorer with the real transaction signature
-  - "View on Solana Explorer" button (opens https://explorer.solana.com/tx/{signature}?cluster=devnet)
+  - Link to Solscan with the real transaction signature
+  - "View on Solscan" button (opens https://solscan.io/tx/{signature}?cluster=devnet)
 
 ### Step 5 — Active Loan State (Visual Loan Tracker)
 - After successful cash-out, transition to an "Active Loan" screen
@@ -140,7 +140,7 @@ The demo is a 6-step linear flow. All platform integrations are mocked; both Sol
 - Show loading state: "Processing repayment..."
 - On success: show a final success state:
   - "Loan repaid"
-  - Link to the second Solana Explorer transaction
+  - Link to the second Solscan transaction
   - Button to "Start over" (resets the demo to Step 1)
 
 ## Revenue Model Positioning
@@ -175,7 +175,7 @@ export const REPAYMENT_DAYS = 14;
 1. **Cash-out**: Treasury wallet → User wallet (mock USDC SPL token transfer on devnet)
 2. **Repayment**: User wallet → Treasury wallet (mock USDC SPL token transfer on devnet)
 
-Both must produce real signatures verifiable on Solana Explorer at https://explorer.solana.com/?cluster=devnet
+Both must produce real signatures verifiable on Solscan at https://solscan.io/?cluster=devnet
 
 If either fails, the demo fails. Prioritize making these two transactions rock-solid above all UI polish.
 
@@ -189,7 +189,7 @@ If either fails, the demo fails. Prioritize making these two transactions rock-s
 
 - [ ] GitHub repo with all hackathon-period commits
 - [ ] App deployed and live on Vercel
-- [ ] Real devnet transactions demonstrable, with explorer links
+- [ ] Real devnet transactions demonstrable, with Solscan links
 - [ ] 3-minute pitch video
 - [ ] Technical demo video showing the cash-out + repayment flow
 - [ ] Submitted on arena.colosseum.org
@@ -210,3 +210,7 @@ If either fails, the demo fails. Prioritize making these two transactions rock-s
 - When in doubt between two approaches, pick the simpler one and document the choice.
 - Skip writing tests unless something breaks repeatedly. We'll add tests post-hackathon if the project survives.
 - For UI: prefer copy-pasting from shadcn/ui or pre-built Tailwind components over hand-crafting. Speed > originality.
+
+## Known UI Quirks
+
+- Phantom (and possibly other wallets) cannot read decimals correctly for SPL tokens that don't have on-chain metadata (like our mock USDC). The user's wallet may display "5 null" instead of "10 USDC" — this is a wallet rendering issue, not a balance issue. The actual on-chain balance is correct and verifiable via Solscan or programmatic queries. We are not adding metadata to the mock USDC for this hackathon.

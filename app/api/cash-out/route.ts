@@ -38,12 +38,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { signature, explorerUrl } = await transferUSDC(
+    const { signature, solscanUrl } = await transferUSDC(
       amount,
       recipientAddress
     );
 
-    return NextResponse.json({ success: true, signature, explorerUrl });
+    return NextResponse.json({ success: true, signature, solscanUrl });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     return NextResponse.json({ success: false, error: message }, { status: 500 });

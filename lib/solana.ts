@@ -15,7 +15,7 @@ import { HELIUS_DEVNET_RPC, USDC_DECIMALS, USDC_MINT } from "@/lib/constants";
 export async function transferUSDC(
   amount: number,
   recipientAddress: string
-): Promise<{ signature: string; explorerUrl: string }> {
+): Promise<{ signature: string; solscanUrl: string }> {
   const secretKeyJson = process.env.TREASURY_PRIVATE_KEY;
   if (!secretKeyJson) {
     throw new Error("TREASURY_PRIVATE_KEY is not set in .env.local");
@@ -57,6 +57,6 @@ export async function transferUSDC(
 
   return {
     signature,
-    explorerUrl: `https://explorer.solana.com/tx/${signature}?cluster=devnet`,
+    solscanUrl: `https://solscan.io/tx/${signature}?cluster=devnet`,
   };
 }
