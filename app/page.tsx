@@ -4,6 +4,15 @@ import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { useCallback, useEffect, useState } from "react";
 import { getUSDCBalance } from "@/lib/usdc-balance";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 type CashOutStatus = "idle" | "loading" | "success" | "error";
 
@@ -75,6 +84,7 @@ export default function Home() {
   const [lastSolscanUrl, setLastSolscanUrl] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [usdcBalance, setUsdcBalance] = useState<number | null>(null);
+  const [showConfirmDialog, setShowConfirmDialog] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -196,6 +206,11 @@ export default function Home() {
     setErrorMessage(null);
   }, []);
 
+  const handleConfirm = useCallback(() => {
+    setShowConfirmDialog(false);
+    handleCashOut();
+  }, [handleCashOut]);
+
   const address = publicKey?.toBase58();
   const truncated = address
     ? `${address.slice(0, 4)}…${address.slice(-4)}`
@@ -286,10 +301,12 @@ export default function Home() {
                       ${CASH_OUT_AMOUNT.toFixed(2)} pending
                     </div>
                   </div>
-                  <button
-                    onClick={handleCashOut}
+                  <Button
+                    variant="default"
+                    size="lg"
+                    className="w-full"
                     disabled={cashOutStatus === "loading"}
-                    className="w-full h-11 rounded-lg bg-black text-white text-sm font-medium hover:bg-neutral-800 disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 transition-colors"
+                    onClick={() => setShowConfirmDialog(true)}
                   >
                     {cashOutStatus === "loading" ? (
                       <>
@@ -299,7 +316,7 @@ export default function Home() {
                     ) : (
                       `Cash out $${CASH_OUT_AMOUNT}`
                     )}
-                  </button>
+                  </Button>
                   {errorMessage && (
                     <div
                       className={`text-sm ${
@@ -317,6 +334,38 @@ export default function Home() {
           </>
         )}
       </div>
+
+      <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Confirm cash-out</DialogTitle>
+            <DialogDescription>
+              Network: Solana devnet · Fee: $0 (demo)
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 flex justify-center">
+            <span className="text-4xl font-semibold text-emerald-600 tabular-nums">
+              + ${CASH_OUT_AMOUNT.toFixed(2)} USDC
+            </span>
+          </div>
+          <DialogFooter className="flex-row gap-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setShowConfirmDialog(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="default"
+              className="flex-1"
+              onClick={handleConfirm}
+            >
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </main>
   );
 }
