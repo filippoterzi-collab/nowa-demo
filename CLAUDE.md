@@ -212,6 +212,40 @@ If either fails, the demo fails. Prioritize making these two transactions rock-s
 - Skip writing tests unless something breaks repeatedly. We'll add tests post-hackathon if the project survives.
 - For UI: prefer copy-pasting from shadcn/ui or pre-built Tailwind components over hand-crafting. Speed > originality.
 
+## Auto-funding flow
+
+To onboard new users (judges, friends) who connect with empty wallets, the app
+runs a 2-modal onboarding sequence after wallet connection.
+
+**Detection logic (in `app/page.tsx`, after `publicKey` change):**
+1. If `localStorage["giogio-setup-acknowledged"] !== "true"` → show `SetupPhantomModal`.
+2. Else fetch `connection.getBalance(publicKey)`. If balance < 0.05 SOL → show `FundWalletModal`.
+3. If both checks pass, no modals appear and the user proceeds to the platform picker.
+
+**Modal 1 — `components/setup-phantom-modal.tsx`:**
+Educational walkthrough for switching Phantom to devnet. The "I'm on Devnet ✓"
+button is a pure self-attestation — it sets `localStorage["giogio-setup-acknowledged"] = "true"`
+and closes. We don't try to verify the wallet's actual network because there's
+no reliable way to read Phantom's selected network from JS (the app's
+`connection.rpcEndpoint` is hardcoded to Helius devnet via `SolanaWalletProvider`,
+so it can't tell us anything about Phantom). Returning visitors skip this modal.
+
+**Modal 2 — `components/fund-wallet-modal.tsx`:**
+Sends `POST /api/fund-wallet { walletAddress }`. On success, shows a green
+checkmark + auto-closes after 1.5s. Funding amount is **0.1 SOL only** — no
+USDC. The user borrows USDC from the app via the normal cash-out flow, which
+already handles ATA creation.
+
+**API — `app/api/fund-wallet/route.ts`:**
+- Validates `walletAddress` as a Solana `PublicKey` (400 if invalid).
+- Refuses if user balance ≥ 0.05 SOL (400 "Wallet already has funds").
+- Refuses if treasury balance < 1 SOL (503).
+- Sends 0.1 SOL via `SystemProgram.transfer` from `TREASURY_PRIVATE_KEY`,
+  signed and confirmed with commitment `'confirmed'`.
+- Per-IP rate limit: 3 requests / hour (429 if exceeded). In-memory `Map`,
+  module-scoped — resets on cold start. Adequate for hackathon demo; for
+  production, swap for Redis or Vercel KV.
+
 ## Known UI Quirks
 
 - Phantom (and possibly other wallets) cannot read decimals correctly for SPL tokens that don't have on-chain metadata (like our mock USDC). The user's wallet may display "5 null" instead of "10 USDC" — this is a wallet rendering issue, not a balance issue. The actual on-chain balance is correct and verifiable via Solscan or programmatic queries. We are not adding metadata to the mock USDC for this hackathon.

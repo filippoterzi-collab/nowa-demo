@@ -2,7 +2,7 @@
 
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
-import { VersionedTransaction } from "@solana/web3.js";
+import { LAMPORTS_PER_SOL, VersionedTransaction } from "@solana/web3.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
 import confetti from "canvas-confetti";
@@ -14,6 +14,8 @@ import { AnalysisScreen } from "@/components/analysis-screen";
 import { ChooseAmountScreen } from "@/components/choose-amount-screen";
 import { ActiveLoanCard } from "@/components/active-loan-card";
 import { ActiveLoanBlock } from "@/components/active-loan-block";
+import { SetupPhantomModal } from "@/components/setup-phantom-modal";
+import { FundWalletModal } from "@/components/fund-wallet-modal";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -42,6 +44,7 @@ const BALANCE_REFETCH_DELAY_MS = 1500;
 const OAUTH_CONNECTING_MS = 2000;
 const OAUTH_SUCCESS_MS = 1500;
 const ANALYSIS_DURATION_MS = 3000;
+const SOL_FUND_THRESHOLD_LAMPORTS = 0.05 * LAMPORTS_PER_SOL;
 
 function matchSolanaError(message: string): string | null {
   const lc = message.toLowerCase();
@@ -137,6 +140,8 @@ export default function Home() {
   const [loanRestoreStatus, setLoanRestoreStatus] = useState<
     "idle" | "checking" | "done"
   >("idle");
+  const [showSetupModal, setShowSetupModal] = useState(false);
+  const [showFundModal, setShowFundModal] = useState(false);
 
   const safeCashOutAmount =
     typeof cashOutAmount === "number" && !isNaN(cashOutAmount)
@@ -236,6 +241,46 @@ export default function Home() {
       cancelled = true;
     };
   }, [publicKey, connection, clearOauthTimers]);
+
+  const checkSolBalanceAndMaybeFund = useCallback(async () => {
+    if (!publicKey) return;
+    try {
+      const lamports = await connection.getBalance(publicKey);
+      if (lamports < SOL_FUND_THRESHOLD_LAMPORTS) {
+        setShowFundModal(true);
+      } else {
+        setShowFundModal(false);
+      }
+    } catch {
+      // On RPC error, don't block the user — just skip the modal.
+    }
+  }, [publicKey, connection]);
+
+  useEffect(() => {
+    if (!publicKey) {
+      setShowSetupModal(false);
+      setShowFundModal(false);
+      return;
+    }
+    const acknowledged =
+      window.localStorage.getItem("giogio-setup-acknowledged") === "true";
+    if (!acknowledged) {
+      setShowSetupModal(true);
+      return;
+    }
+    setShowSetupModal(false);
+    checkSolBalanceAndMaybeFund();
+  }, [publicKey, checkSolBalanceAndMaybeFund]);
+
+  const handleSetupDone = useCallback(() => {
+    window.localStorage.setItem("giogio-setup-acknowledged", "true");
+    setShowSetupModal(false);
+    checkSolBalanceAndMaybeFund();
+  }, [checkSolBalanceAndMaybeFund]);
+
+  const handleFundDone = useCallback(() => {
+    setShowFundModal(false);
+  }, []);
 
   const handleCashOut = useCallback(async () => {
     if (!publicKey) return;
@@ -795,6 +840,16 @@ export default function Home() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {publicKey && showSetupModal && (
+        <SetupPhantomModal onDone={handleSetupDone} />
+      )}
+      {publicKey && !showSetupModal && showFundModal && (
+        <FundWalletModal
+          walletAddress={publicKey.toBase58()}
+          onDone={handleFundDone}
+        />
+      )}
     </main>
   );
 }
